@@ -1,0 +1,1 @@
+{"name":"task-sk-022","private":true,"version":"1.0.0","type":"module","scripts":{"dev":"vite","build":"vite build","preview":"vite preview","qa:production":"node qa/production-qa.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest","gsap":"latest"},"devDependencies":{"@axe-core/playwright":"latest","playwright":"latest"}}
