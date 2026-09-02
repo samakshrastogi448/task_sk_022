@@ -1,0 +1,48 @@
+name: Production QA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  production-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - name: Source build / pre-deploy gate
+        run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Probe production URL
+        id: probe
+        shell: bash
+        run: |
+          code=$(curl -L -s -o /dev/null -w "%{http_code}" https://tasksk022.vercel.app || true)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "200" ]; then echo "live=true" >> "$GITHUB_OUTPUT"; else echo "live=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Waiting for manual Vercel
+        if: steps.probe.outputs.live != 'true'
+        run: echo "Canonical production URL is not live yet; release approval remains pending."
+      - name: Require exact-commit Vercel SUCCESS
+        if: steps.probe.outputs.live == 'true'
+        env:
+          SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os,urllib.request
+          sha=os.environ['SHA']; repo='${{ github.repository }}'; token=os.environ['GH_TOKEN']
+          req=urllib.request.Request(f'https://api.github.com/repos/{repo}/commits/{sha}/status',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
+          data=json.load(urllib.request.urlopen(req))
+          matches=[s for s in data.get('statuses',[]) if 'vercel' in (s.get('context') or '').lower()]
+          print(json.dumps(matches,indent=2))
+          if not any(s.get('state')=='success' for s in matches): raise SystemExit('No exact-commit Vercel SUCCESS status found')
+          PY
+      - name: Run multi-viewport production QA
+        if: steps.probe.outputs.live == 'true'
+        env:
+          PRODUCTION_URL: https://tasksk022.vercel.app
+        run: npm run qa:production
